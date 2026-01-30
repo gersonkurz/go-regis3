@@ -87,6 +87,37 @@ func (k *KeyEntry) GetPath() string {
 	return strings.Join(pathComponents, "\\")
 }
 
+// FindKey finds a subkey by path (read-only). Returns nil if not found.
+func (k *KeyEntry) FindKey(path string) *KeyEntry {
+	if path == "" {
+		return k
+	}
+
+	result := k
+	tokens := strings.Split(path, "\\")
+
+	for i, token := range tokens {
+		if token == "" {
+			continue
+		}
+		
+		// If the first token matches the current key's name, treat it as "this"
+		if i == 0 && strings.EqualFold(token, result.name) {
+			continue
+		}
+
+		key := strings.ToLower(token)
+		subKey, exists := result.subKeys[key]
+
+		if !exists {
+			return nil
+		}
+		result = subKey
+	}
+
+	return result
+}
+
 // FindOrCreateKey finds or creates a subkey by path.
 // Handles "-PATH" syntax for remove flag.
 func (k *KeyEntry) FindOrCreateKey(path string) *KeyEntry {
@@ -239,7 +270,7 @@ func (k *KeyEntry) AskToRemoveKey(removeThis *KeyEntry) *KeyEntry {
 // AskToAddValue adds a value to the key (for diff/merge).
 func (k *KeyEntry) AskToAddValue(key *KeyEntry, val *ValueEntry) {
 	// key is the source key (from another tree), we need to find/create it in k's tree
-	destKey := k.AskToAddKey(key)
+	destKey := k.FindOrCreateKey(key.GetPath())
 
 	if val.IsDefaultValue() {
 		newVal := *val
@@ -261,7 +292,7 @@ func (k *KeyEntry) AskToAddValue(key *KeyEntry, val *ValueEntry) {
 
 // AskToRemoveValue adds a value marked for removal (for diff/merge).
 func (k *KeyEntry) AskToRemoveValue(key *KeyEntry, val *ValueEntry) {
-	destKey := k.AskToAddKey(key)
+	destKey := k.FindOrCreateKey(key.GetPath())
 
 	if val.IsDefaultValue() {
 		newVal := *val
