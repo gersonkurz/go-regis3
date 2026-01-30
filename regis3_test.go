@@ -1,9 +1,15 @@
 package regis3
 
 import (
+	"flag"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
+
+// Command-line flag for test data folder
+var testDataFolder = flag.String("testdata", "", "Folder containing .reg files for production tests")
 
 func TestBasicParse(t *testing.T) {
 	input := `Windows Registry Editor Version 5.00
@@ -24,7 +30,7 @@ func TestBasicParse(t *testing.T) {
 		t.Logf("Root values: %v", root.Values())
 		t.Fatalf("Expected root to be HKEY_CURRENT_USER, got '%s'", root.Name())
 	}
-	
+
 	software := root.FindOrCreateKey("Software")
 	testKey := software.FindOrCreateKey("Test")
 
@@ -89,7 +95,7 @@ func TestHexValues(t *testing.T) {
 	}
 
 	key := root.FindOrCreateKey("Software\\HexTest")
-	
+
 	// Check Binary
 	bin := key.Values()["binary"]
 	if bin == nil {
@@ -173,7 +179,7 @@ func TestEscapedValues(t *testing.T) {
 	}
 
 	key := root.FindOrCreateKey("Software\\Escaped")
-	
+
 	dv := key.Values()["dword"]
 	if dv == nil {
 		t.Fatal("Dword value not found")
@@ -348,21 +354,41 @@ func TestWixWriterDeletions(t *testing.T) {
 	}
 }
 
+// TestProductionFiles tests parsing of real .REG files from a configurable folder.
+// Run with: go test -testdata=/path/to/reg/files
 func TestProductionFiles(t *testing.T) {
-	files := []string{
-		"../production-examples/proakt-3.7.0-prepackaged/setup/Registry/only_during_update.reg",
-		"../production-examples/proakt-3.7.0-prepackaged/setup/Registry/automation.reg",
-		"../production-examples/proakt-3.7.0-prepackaged/setup/Registry/wosaxfs.reg",
-		"../production-examples/proakt-3.7.0-prepackaged/setup/Registry/permanent.reg",
-		"../production-examples/proakt-3.7.0-prepackaged/setup/Registry/security.reg",
-		"../production-examples/proakt-3.7.0-prepackaged/setup/Registry/dn_logo.reg",
-		"../production-examples/proakt-3.7.0-prepackaged/setup/Registry/ng_logo.reg",
-		"../production-examples/proakt-3.7.0-prepackaged/setup/Registry/proakt.reg",
-		// Also test a different version structure if needed, but proakt.reg is the main stress test
+	folder := *testDataFolder
+	if folder == "" {
+		folder = os.Getenv("REGIS3_TESTDATA")
+	}
+	if folder == "" {
+		t.Skip("Skipping production file tests: no -testdata flag or REGIS3_TESTDATA env var set")
 	}
 
-	for _, file := range files {
-		t.Run(file, func(t *testing.T) {
+	// Find all .reg files in the folder (recursively)
+	var regFiles []string
+	err := filepath.Walk(folder, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() && strings.HasSuffix(strings.ToLower(info.Name()), ".reg") {
+			regFiles = append(regFiles, path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Failed to walk folder %s: %v", folder, err)
+	}
+
+	if len(regFiles) == 0 {
+		t.Fatalf("No .reg files found in %s", folder)
+	}
+
+	t.Logf("Found %d .reg files in %s", len(regFiles), folder)
+
+	for _, file := range regFiles {
+		relPath, _ := filepath.Rel(folder, file)
+		t.Run(relPath, func(t *testing.T) {
 			root, err := ParseFile(file, ImportOptionsNone)
 			if err != nil {
 				t.Fatalf("ParseFile failed: %v", err)
