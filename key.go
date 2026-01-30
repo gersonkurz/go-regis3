@@ -36,6 +36,12 @@ func (k *KeyEntry) Parent() *KeyEntry {
 	return k.parent
 }
 
+// SetParent sets the parent key.
+// This is useful when grafting a subtree onto another tree.
+func (k *KeyEntry) SetParent(parent *KeyEntry) {
+	k.parent = parent
+}
+
 // SubKeys returns the map of subkeys.
 func (k *KeyEntry) SubKeys() map[string]*KeyEntry {
 	return k.subKeys
