@@ -313,6 +313,7 @@ type ParseOptions struct {
     AllowSemicolonComments    bool  // Allow ; line comments
     IgnoreWhitespaces         bool  // Relaxed whitespace handling
     AllowVariableSubstitution bool  // Enable dword:$$VAR$$ syntax
+    AnsiCodePage              string // Optional ANSI code page (e.g., "windows-1252") for REGEDIT4 files
 }
 ```
 

@@ -17,9 +17,10 @@ type ParserContext struct {
 	Index  int
 	Buffer []rune
 
-	input    []rune
-	inputLen int
-	pos      int
+	input     []rune
+	inputLen  int
+	pos       int
+	lastState ParserState
 }
 
 // NewParserContext creates a new ParserContext.
@@ -40,6 +41,7 @@ func (p *ParserContext) ParseText(text string, initialState ParserState) error {
 	p.Buffer = p.Buffer[:0]
 
 	state := initialState
+	p.lastState = state
 
 	for p.pos < p.inputLen {
 		r := p.input[p.pos]
@@ -50,6 +52,7 @@ func (p *ParserContext) ParseText(text string, initialState ParserState) error {
 			if err != nil {
 				return p.FormatError(err)
 			}
+			p.lastState = state
 		} else {
 			break
 		}
@@ -64,6 +67,12 @@ func (p *ParserContext) ParseText(text string, initialState ParserState) error {
 	}
 
 	return nil
+}
+
+// LastState returns the parser's last known state function.
+// This is used by concrete parsers to apply lenient EOF finalization.
+func (p *ParserContext) LastState() ParserState {
+	return p.lastState
 }
 
 // BufferAsString returns the current buffer contents as a string.

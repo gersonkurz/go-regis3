@@ -274,6 +274,35 @@ func TestDeleteMarkers(t *testing.T) {
 	}
 }
 
+func TestUtf8BomHeader(t *testing.T) {
+	// UTF-8 BOM should be stripped to allow header detection.
+	input := "\ufeffWindows Registry Editor Version 5.00\r\n\r\n[HKEY_CURRENT_USER\\Software\\Bom]\r\n\"Value\"=\"Ok\"\r\n"
+	root, err := Parse(input, nil)
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+
+	key := root.FindOrCreateKey("Software\\Bom")
+	val := key.Values()["value"]
+	if val == nil || val.GetString("") != "Ok" {
+		t.Fatalf("Expected BOM test value, got: %#v", val)
+	}
+}
+
+func TestEofFinalizeHexValue(t *testing.T) {
+	// Missing trailing newline should still finalize the DWORD.
+	input := "Windows Registry Editor Version 5.00\r\n\r\n[HKEY_CURRENT_USER\\Software\\Eof]\r\n\"Count\"=dword:0000000a"
+	root, err := Parse(input, nil)
+	if err != nil {
+		t.Fatalf("Parse failed: %v", err)
+	}
+	key := root.FindOrCreateKey("Software\\Eof")
+	val := key.Values()["count"]
+	if val == nil || val.GetDword(0) != 10 {
+		t.Fatalf("Expected finalized DWORD at EOF, got: %#v", val)
+	}
+}
+
 func TestWixWriter(t *testing.T) {
 	input := `Windows Registry Editor Version 5.00
 

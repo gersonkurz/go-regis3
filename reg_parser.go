@@ -3,6 +3,7 @@ package regis3
 import (
 	"encoding/hex"
 	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
 )
@@ -37,6 +38,11 @@ func NewRegParser(expectedHeader string, options *ParseOptions) *RegParser {
 func (p *RegParser) Parse(content string) (*KeyEntry, error) {
 	err := p.ParseText(content, p.stateExpectHeader)
 	if err != nil {
+		return nil, err
+	}
+	// Lenient EOF handling: regedit is forgiving, so we finalize any pending
+	// tokens instead of failing on missing trailing newlines or incomplete lines.
+	if err := p.finalizeAtEOF(); err != nil {
 		return nil, err
 	}
 	p.cleanup()
@@ -121,12 +127,80 @@ func (p *RegParser) createByteArrayFromBuffer() []byte {
 	input := p.BufferAsString()
 
 	// Pad to even length if necessary (though parser should enforce pairs usually)
+	// Leniency: regedit accepts messy input; we mirror that by padding instead of failing.
 	if len(input)%2 != 0 {
 		input += "0"
 	}
 
 	data, _ := hex.DecodeString(input)
 	return data
+}
+
+// finalizeAtEOF attempts to complete the current parse state when the file ends
+// without a trailing newline. This is intentionally permissive to match regedit's
+// lenient behavior and to tolerate legacy/bad data.
+func (p *RegParser) finalizeAtEOF() error {
+	state := p.LastState()
+	if state == nil {
+		return nil
+	}
+
+	statePtr := func(s ParserState) uintptr {
+		if s == nil {
+			return 0
+		}
+		return reflect.ValueOf(s).Pointer()
+	}
+
+	current := statePtr(state)
+	if current == statePtr(p.stateExpectHeader) {
+		// Allow header without trailing newline.
+		header := p.BufferAsString()
+		if header == "" {
+			return nil
+		}
+		if header != p.expectedHeader {
+			return fmt.Errorf(".REG file expected header '%s', got '%s' instead", p.expectedHeader, header)
+		}
+		return nil
+	}
+	if current == statePtr(p.stateExpectHexIntegerValue) {
+		// Accept trailing DWORD without newline.
+		if p.BufferAsString() != "" {
+			_, err := p.decodeCurrentHexValue()
+			return err
+		}
+	}
+	if current == statePtr(p.stateExpectVariableDefinedHexValue) {
+		// Accept trailing $$VAR$$ without newline.
+		if p.BufferAsString() != "" {
+			_, err := p.decodeCurrentVariableDefinedHexValue()
+			return err
+		}
+	}
+	if current == statePtr(p.stateExpectMultibyteValueDefinition) {
+		// Accept trailing hex blob without newline.
+		if p.BufferAsString() != "" && p.currentValue != nil {
+			p.currentValue.SetBinaryType(p.currentDataKind, p.createByteArrayFromBuffer())
+			p.BufferClear()
+		}
+	}
+	if current == statePtr(p.stateExpectStringValueDefinition) {
+		// Accept unterminated string at EOF (lenient).
+		if p.currentValue != nil {
+			p.currentValue.SetString(p.BufferAsString())
+			p.BufferClear()
+		}
+	}
+	if current == statePtr(p.stateExpectKeyPath) {
+		// Accept key declaration missing closing bracket at EOF (lenient).
+		if p.BufferAsString() != "" {
+			p.currentKey = p.result.FindOrCreateKey(p.BufferAsString())
+			p.BufferClear()
+		}
+	}
+
+	return nil
 }
 
 // State Handlers
@@ -182,6 +256,9 @@ func (p *RegParser) stateExpectNewline(r rune) (ParserState, error) {
 func (p *RegParser) stateExpectStartOfLine(r rune) (ParserState, error) {
 	if r == '\r' || r == '\n' {
 		// blank line
+		return p.stateExpectStartOfLine, nil
+	} else if p.isWhitespace(r) {
+		// Leniency: allow leading whitespace even at start-of-line.
 		return p.stateExpectStartOfLine, nil
 	} else if r == '[' {
 		p.BufferClear()
@@ -413,6 +490,16 @@ func (p *RegParser) stateExpectMultibyteValueDefinition(r rune) (ParserState, er
 		p.currentValue.SetBinaryType(p.currentDataKind, p.createByteArrayFromBuffer())
 		p.BufferClear()
 		return p.stateExpectStartOfLine, nil
+	} else if r == '#' && p.allowHashtagComments() {
+		// Allow comments after multibyte values (lenient).
+		p.currentValue.SetBinaryType(p.currentDataKind, p.createByteArrayFromBuffer())
+		p.BufferClear()
+		return p.stateExpectCommentUntilEndOfLine, nil
+	} else if r == ';' && p.allowSemicolonComments() {
+		// Allow comments after multibyte values (lenient).
+		p.currentValue.SetBinaryType(p.currentDataKind, p.createByteArrayFromBuffer())
+		p.BufferClear()
+		return p.stateExpectCommentUntilEndOfLine, nil
 	} else if isHexDigit(r) {
 		p.BufferAppend(r)
 		return p.stateExpectMultibyteValueDefinition, nil

@@ -50,6 +50,12 @@ type ParseOptions struct {
 	// Enables syntax like: "value"=dword:$$VARIABLE$$
 	// Useful for installer templates where some values are filled in at install time.
 	AllowVariableSubstitution bool
+
+	// AnsiCodePage controls decoding for REGEDIT4 (ANSI) files when using ParseFile.
+	// If empty, the decoder falls back to raw bytes (best-effort UTF-8/ASCII behavior).
+	// Examples: "windows-1252", "windows-1250".
+	// This is intentionally lenient and may accept data that regedit itself would.
+	AnsiCodePage string
 }
 
 // ExportOptions configures the behavior of the .REG file exporter.
