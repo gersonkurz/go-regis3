@@ -55,15 +55,15 @@ func (w *RegWriter) Write(out io.Writer, root *KeyEntry) error {
 }
 
 func (w *RegWriter) exportRecursive(writer io.StringWriter, key *KeyEntry) error {
-	noEmptyKeys := w.Options.HasFlag(NoEmptyKeys)
+	noEmptyKeys := w.Options.NoEmptyKeys
 	skipThisEntry := false
 
 	if noEmptyKeys {
-		skip_this := true
+		skipThis := true
 		if key.defaultValue != nil || len(key.values) > 0 || key.removeFlag {
-			skip_this = false
+			skipThis = false
 		}
-		skipThisEntry = skip_this
+		skipThisEntry = skipThis
 	}
 
 	if !skipThisEntry && key.name != "" {
@@ -193,7 +193,7 @@ func (w *RegWriter) writeLine(writer io.StringWriter, line string) error {
 			_, err := wrapper.w.Write(b)
 			return err
 		}
-		// If it's a real StringWriter (like strings.Builder), we can't easily write raw bytes 
+		// If it's a real StringWriter (like strings.Builder), we can't easily write raw bytes
 		// that aren't valid UTF-8.
 		// Actually, in Go, strings can contain arbitrary bytes.
 		_, err := writer.WriteString(string(b))

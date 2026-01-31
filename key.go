@@ -43,11 +43,23 @@ func (k *KeyEntry) SetParent(parent *KeyEntry) {
 }
 
 // SubKeys returns the map of subkeys.
+//
+// Note: This returns the actual internal map, not a copy. Callers can modify it
+// directly. This matches the C# implementation (public readonly Dictionary) where
+// the map contents are mutable. The C++ sibling returns const refs instead.
+// This design allows external code (like registry importers) to populate the tree.
+// Map keys are lowercase; use the KeyEntry.Name() method to get the original casing.
 func (k *KeyEntry) SubKeys() map[string]*KeyEntry {
 	return k.subKeys
 }
 
 // Values returns the map of values.
+//
+// Note: This returns the actual internal map, not a copy. Callers can modify it
+// directly. This matches the C# implementation (public readonly Dictionary) where
+// the map contents are mutable. The C++ sibling returns const refs instead.
+// This design allows external code (like registry importers) to populate the tree.
+// Map keys are lowercase; use the ValueEntry.Name() method to get the original casing.
 func (k *KeyEntry) Values() map[string]*ValueEntry {
 	return k.values
 }
@@ -106,7 +118,7 @@ func (k *KeyEntry) FindKey(path string) *KeyEntry {
 		if token == "" {
 			continue
 		}
-		
+
 		// If the first token matches the current key's name, treat it as "this"
 		if i == 0 && strings.EqualFold(token, result.name) {
 			continue
@@ -147,7 +159,7 @@ func (k *KeyEntry) FindOrCreateKey(path string) *KeyEntry {
 		if token == "" {
 			continue
 		}
-		
+
 		// If the first token matches the current key's name, treat it as "this"
 		if i == 0 && strings.EqualFold(token, result.name) {
 			continue
@@ -226,7 +238,14 @@ func (k *KeyEntry) Clone(newParent *KeyEntry) *KeyEntry {
 	return result
 }
 
-// AskToAddKey creates or finds a key for adding content.
+// AskToAddKey creates or finds a key for adding content (for diff/merge operations).
+//
+// The "Ask" naming reflects that you're not modifying the source key - you're
+// "asking" this tree (typically a diff/merge result) to record that the given
+// key should be added. The method copies the source key's structure into this tree.
+//
+// This naming convention originates from the C# implementation and is preserved
+// for API compatibility across the C#/C++/Go implementations.
 func (k *KeyEntry) AskToAddKey(addThis *KeyEntry) *KeyEntry {
 	// Note: In C++, get_path() is called on addThis, but addThis might be from another tree.
 	// We want to replicate the path structure relative to k.
@@ -234,7 +253,7 @@ func (k *KeyEntry) AskToAddKey(addThis *KeyEntry) *KeyEntry {
 	// key_entry* key = find_or_create_key(add_this->get_path());
 	// This implies addThis->get_path() returns the FULL path.
 	// If k is Root, and addThis is HKLM\Soft, then find_or_create_key("HKLM\Soft") works.
-	
+
 	key := k.FindOrCreateKey(addThis.GetPath())
 
 	// Copy subkeys (shallow copy of structure, deep copy of nodes)
@@ -266,14 +285,22 @@ func (k *KeyEntry) AskToAddKey(addThis *KeyEntry) *KeyEntry {
 	return key
 }
 
-// AskToRemoveKey creates a key entry marked for removal.
+// AskToRemoveKey creates a key entry marked for removal (for diff/merge operations).
+//
+// The "Ask" naming reflects that you're not modifying the source key - you're
+// "asking" this tree (typically a diff/merge result) to record that the given
+// key should be removed. See AskToAddKey for more details on the naming convention.
 func (k *KeyEntry) AskToRemoveKey(removeThis *KeyEntry) *KeyEntry {
 	key := k.AskToAddKey(removeThis)
 	key.SetRemoveFlag(true)
 	return key
 }
 
-// AskToAddValue adds a value to the key (for diff/merge).
+// AskToAddValue adds a value to the key (for diff/merge operations).
+//
+// The "Ask" naming reflects that you're not modifying the source - you're
+// "asking" this tree to record that the given value should be added.
+// See AskToAddKey for more details on the naming convention.
 func (k *KeyEntry) AskToAddValue(key *KeyEntry, val *ValueEntry) {
 	// key is the source key (from another tree), we need to find/create it in k's tree
 	destKey := k.FindOrCreateKey(key.GetPath())
@@ -296,7 +323,11 @@ func (k *KeyEntry) AskToAddValue(key *KeyEntry, val *ValueEntry) {
 	}
 }
 
-// AskToRemoveValue adds a value marked for removal (for diff/merge).
+// AskToRemoveValue adds a value marked for removal (for diff/merge operations).
+//
+// The "Ask" naming reflects that you're not modifying the source - you're
+// "asking" this tree to record that the given value should be removed.
+// See AskToAddKey for more details on the naming convention.
 func (k *KeyEntry) AskToRemoveValue(key *KeyEntry, val *ValueEntry) {
 	destKey := k.FindOrCreateKey(key.GetPath())
 

@@ -148,6 +148,9 @@ func (v *ValueEntry) GetString(defaultValue string) string {
 		return defaultValue
 	}
 
+	// Note: An empty string in UTF-16LE would be 2 bytes (null terminator 00 00),
+	// not 0 bytes. However, SetString("") produces 2 bytes, so this check only
+	// affects externally-set data with truly zero bytes. Kept for safety.
 	if len(v.data) == 0 {
 		return defaultValue
 	}

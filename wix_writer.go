@@ -23,7 +23,7 @@ func NewWixWriter() *WixWriter {
 // 2. Writes <RegistryKey> hierarchy for additions/modifications.
 func (w *WixWriter) Write(out io.Writer, root *KeyEntry) error {
 	// 1. Detect recognized roots (e.g. HKLM) or iterate top-level keys
-	
+
 	// Helper to get top-level keys to process
 	getTopLevelKeys := func(k *KeyEntry) ([]*KeyEntry, string, bool) {
 		// If k is a root like "HKEY_LOCAL_MACHINE", return its children with mapped root
@@ -35,7 +35,7 @@ func (w *WixWriter) Write(out io.Writer, root *KeyEntry) error {
 				keys = append(keys, name)
 			}
 			sort.Strings(keys)
-			
+
 			children := make([]*KeyEntry, len(keys))
 			for i, name := range keys {
 				children[i] = subKeys[name]
@@ -48,7 +48,7 @@ func (w *WixWriter) Write(out io.Writer, root *KeyEntry) error {
 	// Determine start points
 	var topKeys []*KeyEntry
 	var startRoot string
-	
+
 	// Check if the root passed in IS a registry root (unwrapped case)
 	children, wixRoot, isRoot := getTopLevelKeys(root)
 	if isRoot {
@@ -67,7 +67,7 @@ func (w *WixWriter) Write(out io.Writer, root *KeyEntry) error {
 			subRootKey := subKeys[rootName]
 			subChildren, subWixRoot, subIsRoot := getTopLevelKeys(subRootKey)
 			if !subIsRoot {
-				return fmt.Errorf("unrecognized registry root: %s", rootName)
+				return fmt.Errorf("unrecognized registry root: %s", subRootKey.Name())
 			}
 			// Process this root's children immediately to preserve order or accumulate?
 			// To keep it simple, we'll process each root bucket sequentially.
@@ -109,7 +109,7 @@ func (w *WixWriter) writeRemovals(out io.Writer, key *KeyEntry, root string, cur
 		}
 		// If key is removed, sub-values/keys are implicitly removed, so don't recurse?
 		// Actually, explicit value deletions inside a deleted key are redundant.
-		return nil 
+		return nil
 	}
 
 	// Check values for deletions
@@ -132,7 +132,7 @@ func (w *WixWriter) writeRemovals(out io.Writer, key *KeyEntry, root string, cur
 			}
 		}
 	}
-	
+
 	// Default value check
 	if key.defaultValue != nil && key.defaultValue.removeFlag {
 		if _, err := fmt.Fprintf(out, "<RemoveRegistryValue Root=\"%s\" Key=\"%s\"/>\n", root, escapeWixXml(currentPath)); err != nil {
@@ -166,7 +166,7 @@ func (w *WixWriter) writeAdditions(out io.Writer, key *KeyEntry, root string, is
 
 	// Only write <RegistryKey> if we have something to add (values or subkeys)
 	// OR if we want to force create. .reg usually implies creation.
-	
+
 	rootAttr := ""
 	if isTopLevel {
 		rootAttr = fmt.Sprintf(" Root=\"%s\"", root)
@@ -292,4 +292,3 @@ func mapRoot(name string) (string, bool) {
 	}
 	return "", false
 }
-

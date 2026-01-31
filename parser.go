@@ -17,11 +17,9 @@ type ParserContext struct {
 	Index  int
 	Buffer []rune
 
-	input       []rune
-	inputLen    int
-	pos         int
-	lastFile    string
-	syntaxError error
+	input    []rune
+	inputLen int
+	pos      int
 }
 
 // NewParserContext creates a new ParserContext.
@@ -40,16 +38,12 @@ func (p *ParserContext) ParseText(text string, initialState ParserState) error {
 	p.Column = 1
 	p.Index = 0
 	p.Buffer = p.Buffer[:0]
-	p.syntaxError = nil
 
 	state := initialState
 
 	for p.pos < p.inputLen {
 		r := p.input[p.pos]
-		
-		// In C++, the loop increments ptr AFTER calling state.
-		// So state sees current char.
-		
+
 		var err error
 		if state != nil {
 			state, err = state(r)
@@ -57,7 +51,6 @@ func (p *ParserContext) ParseText(text string, initialState ParserState) error {
 				return p.FormatError(err)
 			}
 		} else {
-			// Should not happen if loop continues
 			break
 		}
 
@@ -89,18 +82,15 @@ func (p *ParserContext) BufferClear() {
 }
 
 // FormatError augments an error with context information (line, column, snippet).
+// Returns a *ParseError with location and context details.
 func (p *ParserContext) FormatError(err error) error {
-	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("Parser failed at line %d, col %d:\n", p.Line, p.Column))
-	
-	if p.lastFile != "" {
-		sb.WriteString(fmt.Sprintf("- in '%s'\n", p.lastFile))
+	pe := &ParseError{
+		Line:    p.Line,
+		Column:  p.Column,
+		Message: err.Error(),
 	}
 
-	sb.WriteString(err.Error())
-	sb.WriteString("\n")
-
-	// Show context
+	// Extract context line
 	start := p.pos
 	if start >= p.inputLen {
 		start = p.inputLen - 1
@@ -120,18 +110,22 @@ func (p *ParserContext) FormatError(err error) error {
 	}
 
 	if start < p.inputLen && start <= stop {
-		lineStr := string(p.input[start:stop])
-		sb.WriteString(">> ")
-		sb.WriteString(lineStr)
-		sb.WriteString("\n")
-		
-		sb.WriteString(">> ")
+		pe.Context = string(p.input[start:stop])
+
+		// Build pointer line
+		var sb strings.Builder
 		for i := start; i < p.pos && i < p.inputLen; i++ {
 			sb.WriteString(" ")
 		}
 		sb.WriteString("^")
-		sb.WriteString("\n")
+		pe.ContextPointer = sb.String()
 	}
 
-	return fmt.Errorf("%s", sb.String())
+	return pe
+}
+
+// Deprecated: Use ParseError fields directly for programmatic access.
+// This function is kept for backward compatibility with code that uses fmt.Errorf style errors.
+func formatErrorLegacy(line, column int, message string) error {
+	return fmt.Errorf("Parser failed at line %d, col %d: %s", line, column, message)
 }

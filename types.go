@@ -32,45 +32,30 @@ const (
 	RegEscapedQword = 0xFFFFFFFD // -3
 )
 
-// ImportOptions flags for .REG file parsing
-type ImportOptions uint32
+// ParseOptions configures the behavior of the .REG file parser.
+type ParseOptions struct {
+	// AllowHashtagComments allows # style line comments.
+	// Standard .REG files don't support comments; enable this for hand-edited files.
+	AllowHashtagComments bool
 
-const (
-	ImportOptionsNone ImportOptions = 0
+	// AllowSemicolonComments allows ; style line comments.
+	// Standard .REG files don't support comments; enable this for hand-edited files.
+	AllowSemicolonComments bool
 
-	// AllowHashtagComments allows # style line comments
-	AllowHashtagComments ImportOptions = 1
+	// IgnoreWhitespaces is more relaxed about whitespace in .REG files.
+	// Recommended for manually edited files that may have extra spaces.
+	IgnoreWhitespaces bool
 
-	// AllowSemicolonComments allows ; style line comments
-	AllowSemicolonComments ImportOptions = 2
-
-	// IgnoreWhitespaces is more relaxed about whitespaces in .REG files.
-	// Recommended for manually edited files.
-	IgnoreWhitespaces ImportOptions = 4
-
-	// AllowVariableNamesForNonStringVariables allows variable names for non-string variables.
+	// AllowVariableSubstitution allows variable names for non-string values.
 	// Enables syntax like: "value"=dword:$$VARIABLE$$
-	AllowVariableNamesForNonStringVariables ImportOptions = 8
-)
-
-// Helper methods for ImportOptions
-func (o ImportOptions) HasFlag(flag ImportOptions) bool {
-	return (o & flag) == flag
+	// Useful for installer templates where some values are filled in at install time.
+	AllowVariableSubstitution bool
 }
 
-// ExportOptions flags for .REG file generation
-type ExportOptions uint32
-
-const (
-	ExportOptionsNone ExportOptions = 0
-
-	// NoEmptyKeys skips keys that have no values.
-	NoEmptyKeys ExportOptions = 1
-)
-
-// Helper methods for ExportOptions
-func (o ExportOptions) HasFlag(flag ExportOptions) bool {
-	return (o & flag) == flag
+// ExportOptions configures the behavior of the .REG file exporter.
+type ExportOptions struct {
+	// NoEmptyKeys skips keys that have no values when exporting.
+	NoEmptyKeys bool
 }
 
 // IsStringType checks if a registry value type is a string type (REG_SZ or REG_EXPAND_SZ).

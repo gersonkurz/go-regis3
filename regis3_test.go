@@ -18,7 +18,7 @@ func TestBasicParse(t *testing.T) {
 "StringValue"="Hello World"
 "DwordValue"=dword:00000001
 `
-	root, err := Parse(input, ImportOptionsNone)
+	root, err := Parse(input, nil)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
@@ -59,7 +59,7 @@ func TestRegedit4(t *testing.T) {
 [HKEY_CURRENT_USER\Software\Test]
 "StringValue"="Hello World"
 `
-	root, err := Parse(input, ImportOptionsNone)
+	root, err := Parse(input, nil)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
@@ -82,10 +82,10 @@ func TestHexValues(t *testing.T) {
 "Binary"=hex:01,02,03,04
 "Multi"=hex(7):48,00,65,00,6c,00,6c,00,6f,00,00,00,00,00
 `
-// Multi is "Hello" in UTF-16LE + double null
-// H=0048, e=0065, l=006c, l=006c, o=006f
+	// Multi is "Hello" in UTF-16LE + double null
+	// H=0048, e=0065, l=006c, l=006c, o=006f
 
-	root, err := Parse(input, ImportOptionsNone)
+	root, err := Parse(input, nil)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
@@ -132,13 +132,13 @@ func TestRoundTrip(t *testing.T) {
 "Binary"=hex:de,ad,be,ef
 `
 	// 1. Parse
-	root1, err := Parse(input, ImportOptionsNone)
+	root1, err := Parse(input, nil)
 	if err != nil {
 		t.Fatalf("Initial parse failed: %v", err)
 	}
 
 	// 2. Write
-	writer := NewRegWriter(HeaderWindows5, ExportOptionsNone, false) // Use UTF-8 for easy string comparison
+	writer := NewRegWriter(HeaderWindows5, ExportOptions{}, false) // Use UTF-8 for easy string comparison
 	var sb strings.Builder
 	if err := writer.Write(&sb, root1); err != nil {
 		t.Fatalf("Write failed: %v", err)
@@ -146,7 +146,7 @@ func TestRoundTrip(t *testing.T) {
 	output := sb.String()
 
 	// 3. Parse again
-	root2, err := Parse(output, ImportOptionsNone)
+	root2, err := Parse(output, nil)
 	if err != nil {
 		t.Logf("Output was:\n%s", output)
 		t.Fatalf("Second parse failed: %v", err)
@@ -172,8 +172,7 @@ func TestEscapedValues(t *testing.T) {
 "Qword"=hex(b):$$VAR2$$
 `
 	// Need to allow variables for non-string types
-	opts := AllowVariableNamesForNonStringVariables
-	root, err := Parse(input, opts)
+	root, err := Parse(input, &ParseOptions{AllowVariableSubstitution: true})
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
@@ -203,7 +202,7 @@ func TestEscapedValues(t *testing.T) {
 	}
 
 	// Test Round-trip
-	writer := NewRegWriter(HeaderWindows5, ExportOptionsNone, false)
+	writer := NewRegWriter(HeaderWindows5, ExportOptions{}, false)
 	var sb strings.Builder
 	if err := writer.Write(&sb, root); err != nil {
 		t.Fatalf("Write failed: %v", err)
@@ -227,7 +226,7 @@ func TestDeleteMarkers(t *testing.T) {
 "DeleteMe"=-
 @=-
 `
-	root, err := Parse(input, ImportOptionsNone)
+	root, err := Parse(input, nil)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
@@ -257,7 +256,7 @@ func TestDeleteMarkers(t *testing.T) {
 	}
 
 	// 4. Test Round-trip for deletions
-	writer := NewRegWriter(HeaderWindows5, ExportOptionsNone, false)
+	writer := NewRegWriter(HeaderWindows5, ExportOptions{}, false)
 	var sb strings.Builder
 	if err := writer.Write(&sb, root); err != nil {
 		t.Fatalf("Write failed: %v", err)
@@ -284,7 +283,7 @@ func TestWixWriter(t *testing.T) {
 "Escaped"=dword:$$VAR$$
 "Binary"=hex:01,02
 `
-	root, err := Parse(input, AllowVariableNamesForNonStringVariables)
+	root, err := Parse(input, &ParseOptions{AllowVariableSubstitution: true})
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
@@ -331,7 +330,7 @@ func TestWixWriterDeletions(t *testing.T) {
 "DeleteMe"=-
 @=-
 `
-	root, err := Parse(input, ImportOptionsNone)
+	root, err := Parse(input, nil)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
@@ -389,13 +388,13 @@ func TestProductionFiles(t *testing.T) {
 	for _, file := range regFiles {
 		relPath, _ := filepath.Rel(folder, file)
 		t.Run(relPath, func(t *testing.T) {
-			root, err := ParseFile(file, ImportOptionsNone)
+			root, err := ParseFile(file, nil)
 			if err != nil {
 				t.Fatalf("ParseFile failed: %v", err)
 			}
 
 			// Perform round-trip check
-			writer := NewRegWriter(HeaderWindows5, ExportOptionsNone, false)
+			writer := NewRegWriter(HeaderWindows5, ExportOptions{}, false)
 			var sb strings.Builder
 			if err := writer.Write(&sb, root); err != nil {
 				t.Fatalf("Write failed: %v", err)
@@ -403,7 +402,7 @@ func TestProductionFiles(t *testing.T) {
 			output := sb.String()
 
 			// Parse again to ensure semantic identity
-			root2, err := Parse(output, ImportOptionsNone)
+			root2, err := Parse(output, nil)
 			if err != nil {
 				t.Fatalf("Second parse failed: %v", err)
 			}

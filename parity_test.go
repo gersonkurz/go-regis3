@@ -22,7 +22,7 @@ func TestWhitespaceParity(t *testing.T) {
 "Dword"=dword:00000001
 `
 	// Enable IgnoreWhitespaces
-	root, err := Parse(input, IgnoreWhitespaces)
+	root, err := Parse(input, &ParseOptions{IgnoreWhitespaces: true})
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
@@ -46,13 +46,13 @@ func TestEscapedStringParity(t *testing.T) {
 "Backslash"="\\"
 "Mixed"="a\"b\\c"
 `
-	root, err := Parse(input, ImportOptionsNone)
+	root, err := Parse(input, nil)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
 
 	key := root.FindOrCreateKey("Software\\Escapes")
-	
+
 	tests := []struct {
 		name     string
 		expected string
@@ -84,7 +84,7 @@ func TestMultilineHexParity(t *testing.T) {
   05,06,07,08,\ 
   09,0a
 `
-	root, err := Parse(input, ImportOptionsNone)
+	root, err := Parse(input, nil)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}
@@ -94,7 +94,7 @@ func TestMultilineHexParity(t *testing.T) {
 	if val == nil {
 		t.Fatal("Binary value not found")
 	}
-	
+
 	expected := []byte{1, 2, 3, 4, 5, 6, 7, 8, 9, 10}
 	data := val.Data()
 	if len(data) != len(expected) {
@@ -117,7 +117,7 @@ func TestDeleteMarkerParity(t *testing.T) {
 "DeletedValue"=-
 @=-
 `
-	root, err := Parse(input, ImportOptionsNone)
+	root, err := Parse(input, nil)
 	if err != nil {
 		t.Fatalf("Parse failed: %v", err)
 	}

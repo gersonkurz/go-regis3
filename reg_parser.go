@@ -11,17 +11,20 @@ import (
 type RegParser struct {
 	*ParserContext
 
-	options              ImportOptions
-	expectedHeader       string
-	bracketsExpected     int
-	result               *KeyEntry
-	currentKey           *KeyEntry
-	currentValue         *ValueEntry
-	currentDataKind      uint32
+	options          *ParseOptions
+	expectedHeader   string
+	bracketsExpected int
+	result           *KeyEntry
+	currentKey       *KeyEntry
+	currentValue     *ValueEntry
+	currentDataKind  uint32
 }
 
 // NewRegParser creates a new parser.
-func NewRegParser(expectedHeader string, options ImportOptions) *RegParser {
+func NewRegParser(expectedHeader string, options *ParseOptions) *RegParser {
+	if options == nil {
+		options = &ParseOptions{}
+	}
 	return &RegParser{
 		ParserContext:  NewParserContext(),
 		expectedHeader: expectedHeader,
@@ -42,16 +45,12 @@ func (p *RegParser) Parse(content string) (*KeyEntry, error) {
 
 // cleanup recursively unwraps single-child keys with no values.
 func (p *RegParser) cleanup() {
-	// Unwrap single-child keys with no values (match C# behavior: unwrap once?)
-	// C# code:
-	// if ((Result.Keys.Count == 1) && (Result.Values.Count == 0)) ...
-	// It seems to be just ONE level.
-	
+	// Unwrap single-child keys with no values (match C# behavior: unwrap once)
 	if p.result != nil &&
 		len(p.result.subKeys) == 1 &&
 		len(p.result.values) == 0 &&
 		p.result.defaultValue == nil {
-		
+
 		var child *KeyEntry
 		for _, v := range p.result.subKeys {
 			child = v
@@ -64,20 +63,20 @@ func (p *RegParser) cleanup() {
 
 // Helpers
 
-func (p *RegParser) allowVariableNamesForNonStringVariables() bool {
-	return p.options.HasFlag(AllowVariableNamesForNonStringVariables)
+func (p *RegParser) allowVariableSubstitution() bool {
+	return p.options.AllowVariableSubstitution
 }
 
 func (p *RegParser) allowSemicolonComments() bool {
-	return p.options.HasFlag(AllowSemicolonComments)
+	return p.options.AllowSemicolonComments
 }
 
 func (p *RegParser) allowHashtagComments() bool {
-	return p.options.HasFlag(AllowHashtagComments)
+	return p.options.AllowHashtagComments
 }
 
 func (p *RegParser) ignoreWhitespaces() bool {
-	return p.options.HasFlag(IgnoreWhitespaces)
+	return p.options.IgnoreWhitespaces
 }
 
 func (p *RegParser) isWhitespace(r rune) bool {
@@ -97,12 +96,6 @@ func (p *RegParser) decodeCurrentHexValue() (ParserState, error) {
 	val := p.BufferAsString()
 	p.BufferClear()
 
-	// Parse hex string to uint32
-	// val might be empty or contain non-hex chars if logic is wrong, but caller guards it
-	
-	// C++ uses string::from_hex_string which handles "0x" prefix optionally?
-	// .reg files usually have "dword:00000001"
-	
 	result, err := strconv.ParseUint(val, 16, 32)
 	if err != nil {
 		return nil, fmt.Errorf("'%s' is not a valid hex integer", val)
@@ -126,7 +119,7 @@ func (p *RegParser) decodeCurrentVariableDefinedHexValue() (ParserState, error) 
 
 func (p *RegParser) createByteArrayFromBuffer() []byte {
 	input := p.BufferAsString()
-	
+
 	// Pad to even length if necessary (though parser should enforce pairs usually)
 	if len(input)%2 != 0 {
 		input += "0"
@@ -135,7 +128,6 @@ func (p *RegParser) createByteArrayFromBuffer() []byte {
 	data, _ := hex.DecodeString(input)
 	return data
 }
-
 
 // State Handlers
 
@@ -165,25 +157,25 @@ func (p *RegParser) stateExpectCarriageReturn(r rune) (ParserState, error) {
 	} else if r == ' ' || r == '\t' {
 		// ignore trailing whitespace
 		return p.stateExpectCarriageReturn, nil
-	} else if r == '#' || r == ';' {
+	} else if r == '#' {
+		if !p.allowHashtagComments() {
+			return nil, fmt.Errorf("'#' is not valid here; set AllowHashtagComments to use # as a comment marker")
+		}
+		return p.stateExpectCommentUntilEndOfLine, nil
+	} else if r == ';' {
+		if !p.allowSemicolonComments() {
+			return nil, fmt.Errorf("';' is not valid here; set AllowSemicolonComments to use ; as a comment marker")
+		}
 		return p.stateExpectCommentUntilEndOfLine, nil
 	}
-	return nil, fmt.Errorf("Expected carriage return but got '%c' instead", r)
+	return nil, fmt.Errorf("expected carriage return but got '%c' instead", r)
 }
 
 func (p *RegParser) stateExpectNewline(r rune) (ParserState, error) {
 	if r == '\n' {
 		return p.stateExpectStartOfLine, nil
 	}
-	// C++: return true (stay in state) if not newline? 
-	// "if (c == '\n') return set_current_state(...); return true;"
-	// So if it's NOT newline, it just continues. 
-	// Wait, standard Windows EOL is \r\n.
-	// if stateExpectHeader returns stateExpectNewline, the next char SHOULD be \n.
-	// If it's not, we might be in trouble or it's just ignoring junk?
-	// C++ implementation:
-	// bool state_expect_newline(char c) { if (c == '\n') set_state(...); return true; }
-	// This implies it consumes anything until \n.
+	// Consume anything until \n (handles \r\n and other trailing chars)
 	return p.stateExpectNewline, nil
 }
 
@@ -196,9 +188,15 @@ func (p *RegParser) stateExpectStartOfLine(r rune) (ParserState, error) {
 		p.bracketsExpected = 0
 		return p.stateExpectKeyPath, nil
 	} else if r == '@' {
+		if p.currentKey == nil {
+			return nil, fmt.Errorf("value definition before any key declaration")
+		}
 		p.currentValue = p.currentKey.FindOrCreateValue("")
 		return p.stateExpectEqualSign, nil
 	} else if r == '"' {
+		if p.currentKey == nil {
+			return nil, fmt.Errorf("value definition before any key declaration")
+		}
 		p.BufferClear()
 		return p.stateExpectValueNameDefinition, nil
 	} else if r == '#' && p.allowHashtagComments() {
@@ -208,7 +206,7 @@ func (p *RegParser) stateExpectStartOfLine(r rune) (ParserState, error) {
 		p.BufferClear()
 		return p.stateExpectCommentUntilEndOfLine, nil
 	}
-	return nil, fmt.Errorf("Unexpected character '%c' at start of line", r)
+	return nil, fmt.Errorf("unexpected character '%c' at start of line", r)
 }
 
 func (p *RegParser) stateExpectCommentUntilEndOfLine(r rune) (ParserState, error) {
@@ -245,7 +243,7 @@ func (p *RegParser) stateExpectEqualSign(r rune) (ParserState, error) {
 	} else if p.isWhitespace(r) {
 		return p.stateExpectEqualSign, nil
 	}
-	return nil, fmt.Errorf("Expected '=' but got '%c' instead", r)
+	return nil, fmt.Errorf("expected '=' but got '%c' instead", r)
 }
 
 func (p *RegParser) stateExpectStartOfValueDefinition(r rune) (ParserState, error) {
@@ -264,7 +262,6 @@ func (p *RegParser) stateExpectStartOfValueDefinition(r rune) (ParserState, erro
 
 		if typeName == "dword" {
 			p.currentDataKind = RegDword
-			// fmt.Printf("DEBUG: stateExpectStartOfValueDefinition: typeName=%s, currentDataKind=%d\n", typeName, p.currentDataKind)
 			return p.stateExpectHexIntegerValue, nil
 		} else if strings.HasPrefix(typeName, "hex(") && strings.HasSuffix(typeName, ")") {
 			// hex(N): format
@@ -282,7 +279,7 @@ func (p *RegParser) stateExpectStartOfValueDefinition(r rune) (ParserState, erro
 			p.currentDataKind = RegBinary
 			return p.stateExpectStartOfMultibyteValue, nil
 		} else {
-			return nil, fmt.Errorf("Value type '%s' not supported (buffer was '%s')", typeName, p.BufferAsString())
+			return nil, fmt.Errorf("value type '%s' is not supported", typeName)
 		}
 	}
 	p.BufferAppend(r)
@@ -298,13 +295,6 @@ func (p *RegParser) stateExpectHexIntegerValue(r rune) (ParserState, error) {
 		if err != nil {
 			return nil, err
 		}
-		// decodeCurrentHexValue returns stateExpectNewline, but we already have newline
-		// so skip it?
-		// decodeCurrentHexValue logic:
-		// p.currentValue.SetDword(uint32(result))
-		// return p.stateExpectNewline, nil
-		
-		// Since we hit \n, we are effectively done with the line.
 		return p.stateExpectStartOfLine, nil
 	} else if isHexDigit(r) {
 		p.BufferAppend(r)
@@ -313,12 +303,16 @@ func (p *RegParser) stateExpectHexIntegerValue(r rune) (ParserState, error) {
 		// ignore
 		return p.stateExpectHexIntegerValue, nil
 	} else if r == '#' && p.allowHashtagComments() {
-		p.decodeCurrentHexValue()
+		if _, err := p.decodeCurrentHexValue(); err != nil {
+			return nil, err
+		}
 		return p.stateExpectCommentUntilEndOfLine, nil
 	} else if r == ';' && p.allowSemicolonComments() {
-		p.decodeCurrentHexValue()
+		if _, err := p.decodeCurrentHexValue(); err != nil {
+			return nil, err
+		}
 		return p.stateExpectCommentUntilEndOfLine, nil
-	} else if r == '$' && p.allowVariableNamesForNonStringVariables() {
+	} else if r == '$' && p.allowVariableSubstitution() {
 		p.BufferAppend(r)
 		return p.stateExpectVariableDefinedHexValue, nil
 	}
@@ -336,10 +330,14 @@ func (p *RegParser) stateExpectVariableDefinedHexValue(r rune) (ParserState, err
 		}
 		return p.stateExpectStartOfLine, nil
 	} else if r == '#' && p.allowHashtagComments() {
-		p.decodeCurrentVariableDefinedHexValue()
+		if _, err := p.decodeCurrentVariableDefinedHexValue(); err != nil {
+			return nil, err
+		}
 		return p.stateExpectCommentUntilEndOfLine, nil
 	} else if r == ';' && p.allowSemicolonComments() {
-		p.decodeCurrentVariableDefinedHexValue()
+		if _, err := p.decodeCurrentVariableDefinedHexValue(); err != nil {
+			return nil, err
+		}
 		return p.stateExpectCommentUntilEndOfLine, nil
 	}
 	p.BufferAppend(r)
@@ -384,19 +382,17 @@ func (p *RegParser) stateExpectStartOfMultibyteValue(r rune) (ParserState, error
 	if r == '\r' {
 		return p.stateExpectMultibyteValueDefinition(r)
 	} else if r == '\n' {
-		// This is technically invalid (CR expected before LF for empty hex?) 
-		// But let's handle it by delegating to definition
 		return p.stateExpectMultibyteValueDefinition(r)
 	} else if isHexDigit(r) {
 		p.BufferAppend(r)
 		return p.stateExpectMultibyteValueDefinition, nil
 	} else if r == '$' {
-		if p.allowVariableNamesForNonStringVariables() {
+		if p.allowVariableSubstitution() {
 			p.BufferAppend(r)
 			return p.stateExpectVariableDefinedHexValue, nil
 		}
 	}
-	return nil, fmt.Errorf("Expected hex digit at start of binary value")
+	return nil, fmt.Errorf("expected hex digit at start of binary value")
 }
 
 func (p *RegParser) stateExpectMultibyteValueDefinition(r rune) (ParserState, error) {
@@ -421,7 +417,7 @@ func (p *RegParser) stateExpectMultibyteValueDefinition(r rune) (ParserState, er
 		p.BufferAppend(r)
 		return p.stateExpectMultibyteValueDefinition, nil
 	}
-	return nil, fmt.Errorf("Unexpected character '%c' in hex data", r)
+	return nil, fmt.Errorf("unexpected character '%c' in hex data", r)
 }
 
 func (p *RegParser) stateExpectNewlineFollowedByMultibyte(r rune) (ParserState, error) {
@@ -434,6 +430,5 @@ func (p *RegParser) stateExpectNewlineFollowedByMultibyte(r rune) (ParserState, 
 		// ignore trailing spaces after backslash
 		return p.stateExpectNewlineFollowedByMultibyte, nil
 	}
-	return nil, fmt.Errorf("Expected newline to follow trailing backslash")
+	return nil, fmt.Errorf("expected newline to follow trailing backslash")
 }
-

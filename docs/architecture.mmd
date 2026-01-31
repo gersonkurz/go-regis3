@@ -1,0 +1,64 @@
+%%{init: {'theme': 'base', 'themeVariables': { 'primaryColor': '#e1f5fe', 'primaryTextColor': '#01579b', 'primaryBorderColor': '#0288d1', 'lineColor': '#0288d1', 'secondaryColor': '#fff3e0', 'tertiaryColor': '#f3e5f5'}}}%%
+flowchart TB
+    subgraph Input["Input Layer"]
+        REG[".REG File"]
+        STR["String Content"]
+    end
+
+    subgraph API["Public API (regis3.go)"]
+        ParseFile["ParseFile()"]
+        Parse["Parse()"]
+    end
+
+    subgraph Parser["Parser Infrastructure"]
+        subgraph Abstract["Abstract Layer (parser.go)"]
+            PC["ParserContext"]
+            PS["ParserState func"]
+            PT["ParseText()"]
+        end
+        subgraph Concrete["Concrete Layer (reg_parser.go)"]
+            RP["RegParser"]
+            SH["State Handlers<br/>(20+ states)"]
+        end
+    end
+
+    subgraph DataModel["Data Model"]
+        KE["KeyEntry<br/>(key.go)"]
+        VE["ValueEntry<br/>(value.go)"]
+        TY["Types & Constants<br/>(types.go)"]
+    end
+
+    subgraph Output["Output Layer"]
+        RW["RegWriter<br/>(writer.go)"]
+        WW["WixWriter<br/>(wix_writer.go)"]
+        REGOUT[".REG Output"]
+        WIXOUT["WiX XML Output"]
+    end
+
+    REG --> ParseFile
+    STR --> Parse
+    ParseFile --> Parse
+    Parse --> RP
+    RP --> PC
+    PC --> PT
+    PT --> PS
+    PS --> SH
+    SH --> KE
+    KE --> VE
+    VE --> TY
+    KE --> RW
+    KE --> WW
+    RW --> REGOUT
+    WW --> WIXOUT
+
+    classDef inputClass fill:#e8f5e9,stroke:#2e7d32,stroke-width:2px
+    classDef apiClass fill:#e3f2fd,stroke:#1565c0,stroke-width:2px
+    classDef parserClass fill:#fff8e1,stroke:#f9a825,stroke-width:2px
+    classDef dataClass fill:#fce4ec,stroke:#c2185b,stroke-width:2px
+    classDef outputClass fill:#f3e5f5,stroke:#7b1fa2,stroke-width:2px
+
+    class REG,STR inputClass
+    class ParseFile,Parse apiClass
+    class PC,PS,PT,RP,SH parserClass
+    class KE,VE,TY dataClass
+    class RW,WW,REGOUT,WIXOUT outputClass
