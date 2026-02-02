@@ -1,3 +1,5 @@
+//go:build windows
+
 package regis3
 
 import (
@@ -20,11 +22,6 @@ var (
 
 // Is64BitOperatingSystem checks if the OS is 64-bit.
 func Is64BitOperatingSystem() bool {
-	if runtime.GOOS != "windows" {
-		// On non-Windows, we just return based on architecture
-		return runtime.GOARCH == "amd64" || runtime.GOARCH == "arm64"
-	}
-
 	// On Windows with a 64-bit Go binary, we know it's a 64-bit OS
 	if runtime.GOARCH == "amd64" || runtime.GOARCH == "arm64" {
 		return true
