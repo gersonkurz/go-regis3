@@ -205,6 +205,7 @@ func (p *RegParser) finalizeAtEOF() error {
 
 // State Handlers
 
+// stateExpectHeader validates the .REG file header (e.g., "REGEDIT4").
 func (p *RegParser) stateExpectHeader(r rune) (ParserState, error) {
 	if r == '\r' {
 		header := p.BufferAsString()
@@ -223,6 +224,7 @@ func (p *RegParser) stateExpectHeader(r rune) (ParserState, error) {
 	return p.stateExpectHeader, nil
 }
 
+// stateExpectCarriageReturn handles the end of a line, allowing for trailing whitespace or comments.
 func (p *RegParser) stateExpectCarriageReturn(r rune) (ParserState, error) {
 	if r == '\r' {
 		return p.stateExpectStartOfLine, nil
@@ -245,6 +247,7 @@ func (p *RegParser) stateExpectCarriageReturn(r rune) (ParserState, error) {
 	return nil, fmt.Errorf("expected carriage return but got '%c' instead", r)
 }
 
+// stateExpectNewline consumes CR/LF sequences to reach the next line.
 func (p *RegParser) stateExpectNewline(r rune) (ParserState, error) {
 	if r == '\n' {
 		return p.stateExpectStartOfLine, nil
@@ -253,6 +256,13 @@ func (p *RegParser) stateExpectNewline(r rune) (ParserState, error) {
 	return p.stateExpectNewline, nil
 }
 
+// stateExpectStartOfLine determines the type of line being parsed (Key, Value, or Comment).
+// Examples:
+//
+//	[HKEY_LOCAL_MACHINE\Software]  -> Key path
+//	"MyValue"="Data"               -> Value definition
+//	@="Default"                    -> Default value
+//	# Comment                      -> Comment
 func (p *RegParser) stateExpectStartOfLine(r rune) (ParserState, error) {
 	if r == '\r' || r == '\n' {
 		// blank line
@@ -286,6 +296,7 @@ func (p *RegParser) stateExpectStartOfLine(r rune) (ParserState, error) {
 	return nil, fmt.Errorf("unexpected character '%c' at start of line", r)
 }
 
+// stateExpectCommentUntilEndOfLine consumes characters until the end of the line.
 func (p *RegParser) stateExpectCommentUntilEndOfLine(r rune) (ParserState, error) {
 	if r == '\n' {
 		return p.stateExpectStartOfLine, nil
@@ -293,6 +304,8 @@ func (p *RegParser) stateExpectCommentUntilEndOfLine(r rune) (ParserState, error
 	return p.stateExpectCommentUntilEndOfLine, nil
 }
 
+// stateExpectValueNameDefinition parses the name of a registry value.
+// Example: "MyValue"=...
 func (p *RegParser) stateExpectValueNameDefinition(r rune) (ParserState, error) {
 	if r == '"' {
 		p.currentValue = p.currentKey.FindOrCreateValue(p.BufferAsString())
@@ -304,11 +317,17 @@ func (p *RegParser) stateExpectValueNameDefinition(r rune) (ParserState, error) 
 	return p.stateExpectValueNameDefinition, nil
 }
 
+// stateExpectQuotedCharInValueName handles escaped characters within a value name.
 func (p *RegParser) stateExpectQuotedCharInValueName(r rune) (ParserState, error) {
 	p.BufferAppend(r)
 	return p.stateExpectValueNameDefinition, nil
 }
 
+// stateExpectEqualSign waits for the '=' separator or '-' for deletion.
+// Examples:
+//
+//	"Value"=...
+//	"Value"=-
 func (p *RegParser) stateExpectEqualSign(r rune) (ParserState, error) {
 	if r == '=' {
 		p.BufferClear()
@@ -323,6 +342,12 @@ func (p *RegParser) stateExpectEqualSign(r rune) (ParserState, error) {
 	return nil, fmt.Errorf("expected '=' but got '%c' instead", r)
 }
 
+// stateExpectStartOfValueDefinition dispatches based on the value type.
+// Examples:
+//
+//	...="String"     -> String
+//	...=dword:0001   -> DWORD
+//	...=hex:01,02    -> Binary
 func (p *RegParser) stateExpectStartOfValueDefinition(r rune) (ParserState, error) {
 	if r == '"' {
 		p.BufferClear()
@@ -363,6 +388,8 @@ func (p *RegParser) stateExpectStartOfValueDefinition(r rune) (ParserState, erro
 	return p.stateExpectStartOfValueDefinition, nil
 }
 
+// stateExpectHexIntegerValue parses a 32-bit hex integer (REG_DWORD).
+// Example: ...=dword:00000001
 func (p *RegParser) stateExpectHexIntegerValue(r rune) (ParserState, error) {
 	if r == '\r' {
 		return p.decodeCurrentHexValue()
@@ -396,6 +423,8 @@ func (p *RegParser) stateExpectHexIntegerValue(r rune) (ParserState, error) {
 	return nil, fmt.Errorf("'%c' is not a valid hex digit", r)
 }
 
+// stateExpectVariableDefinedHexValue handles escaped variables in hex values.
+// Example: ...=dword:$$MY_VARIABLE$$
 func (p *RegParser) stateExpectVariableDefinedHexValue(r rune) (ParserState, error) {
 	if r == '\r' {
 		return p.decodeCurrentVariableDefinedHexValue()
@@ -421,6 +450,8 @@ func (p *RegParser) stateExpectVariableDefinedHexValue(r rune) (ParserState, err
 	return p.stateExpectVariableDefinedHexValue, nil
 }
 
+// stateExpectStringValueDefinition parses a quoted string value.
+// Example: ...="Hello World"
 func (p *RegParser) stateExpectStringValueDefinition(r rune) (ParserState, error) {
 	if r == '"' {
 		p.currentValue.SetString(p.BufferAsString())
@@ -432,11 +463,15 @@ func (p *RegParser) stateExpectStringValueDefinition(r rune) (ParserState, error
 	return p.stateExpectStringValueDefinition, nil
 }
 
+// stateExpectQuotedCharInStringValue handles escaped characters within a string.
+// Example: ...="Line 1\\nLine 2"
 func (p *RegParser) stateExpectQuotedCharInStringValue(r rune) (ParserState, error) {
 	p.BufferAppend(r)
 	return p.stateExpectStringValueDefinition, nil
 }
 
+// stateExpectKeyPath parses a registry key path.
+// Example: [HKEY_LOCAL_MACHINE\Software]
 func (p *RegParser) stateExpectKeyPath(r rune) (ParserState, error) {
 	if r == '[' {
 		p.bracketsExpected++
@@ -455,6 +490,7 @@ func (p *RegParser) stateExpectKeyPath(r rune) (ParserState, error) {
 	return p.stateExpectKeyPath, nil
 }
 
+// stateExpectStartOfMultibyteValue parses the first digit of a hex data sequence.
 func (p *RegParser) stateExpectStartOfMultibyteValue(r rune) (ParserState, error) {
 	if r == '\r' {
 		return p.stateExpectMultibyteValueDefinition(r)
@@ -472,6 +508,8 @@ func (p *RegParser) stateExpectStartOfMultibyteValue(r rune) (ParserState, error
 	return nil, fmt.Errorf("expected hex digit at start of binary value")
 }
 
+// stateExpectMultibyteValueDefinition parses comma-separated hex bytes.
+// Example: ...=hex:01,02,03
 func (p *RegParser) stateExpectMultibyteValueDefinition(r rune) (ParserState, error) {
 	if r == ',' {
 		// separator, ignore
@@ -507,6 +545,11 @@ func (p *RegParser) stateExpectMultibyteValueDefinition(r rune) (ParserState, er
 	return nil, fmt.Errorf("unexpected character '%c' in hex data", r)
 }
 
+// stateExpectNewlineFollowedByMultibyte handles backslash line continuations in hex data.
+// Example:
+//
+//	"Binary"=hex:01,02,\
+//	  03,04
 func (p *RegParser) stateExpectNewlineFollowedByMultibyte(r rune) (ParserState, error) {
 	if r == '\r' {
 		// ignore
@@ -519,3 +562,4 @@ func (p *RegParser) stateExpectNewlineFollowedByMultibyte(r rune) (ParserState, 
 	}
 	return nil, fmt.Errorf("expected newline to follow trailing backslash")
 }
+

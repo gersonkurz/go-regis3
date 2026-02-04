@@ -5,7 +5,8 @@ import (
 	"io"
 	"sort"
 	"strings"
-	"unicode/utf16"
+
+	"golang.org/x/text/encoding/unicode"
 )
 
 // RegWriter handles exporting KeyEntry trees to .REG format.
@@ -28,19 +29,24 @@ func NewRegWriter(header string, options ExportOptions, useUtf16 bool) *RegWrite
 
 // Write exports the key entry tree to the provided writer.
 func (w *RegWriter) Write(out io.Writer, root *KeyEntry) error {
-	// Write BOM if UTF-16LE
-	if w.useUtf16 {
-		if _, err := out.Write([]byte{0xFF, 0xFE}); err != nil {
-			return err
-		}
-	}
-
-	// Internal writer to handle encoding if needed
 	var writer io.StringWriter
-	if sw, ok := out.(io.StringWriter); ok {
-		writer = sw
+
+	if w.useUtf16 {
+		// Use standard library for robust UTF-16LE encoding with BOM.
+		// Everything written to this encoder will be correctly transformed.
+		enc := unicode.UTF16(unicode.LittleEndian, unicode.UseBOM).NewEncoder()
+		utf16Writer := enc.Writer(out)
+		
+		// If out is already a string writer, we still want to wrap it.
+		// But io.Writer returned by enc.Writer doesn't implement StringWriter.
+		writer = &stringWriterWrapper{utf16Writer}
 	} else {
-		writer = &stringWriterWrapper{out}
+		// Plain ANSI/UTF-8 export.
+		if sw, ok := out.(io.StringWriter); ok {
+			writer = sw
+		} else {
+			writer = &stringWriterWrapper{out}
+		}
 	}
 
 	// Write header
@@ -53,6 +59,7 @@ func (w *RegWriter) Write(out io.Writer, root *KeyEntry) error {
 
 	return w.exportRecursive(writer, root)
 }
+
 
 func (w *RegWriter) exportRecursive(writer io.StringWriter, key *KeyEntry) error {
 	noEmptyKeys := w.Options.NoEmptyKeys
@@ -175,30 +182,6 @@ func (w *RegWriter) writeHexValue(writer io.StringWriter, val *ValueEntry, name 
 }
 
 func (w *RegWriter) writeLine(writer io.StringWriter, line string) error {
-	if w.useUtf16 {
-		// Manual UTF-16LE conversion
-		runes := []rune(line + "\r\n")
-		u16s := utf16.Encode(runes)
-		b := make([]byte, len(u16s)*2)
-		for i, u := range u16s {
-			b[i*2] = byte(u)
-			b[i*2+1] = byte(u >> 8)
-		}
-		// Since writer is io.StringWriter but we want to write bytes for UTF-16LE
-		// we need to bypass the StringWriter and use the underlying Writer if possible.
-		// However, w.writeLine is designed for the high-level logic.
-		// Let's rethink. If useUtf16 is true, we should probably wrap the output in a encoder.
-		// But for now, let's keep it simple.
-		if wrapper, ok := writer.(*stringWriterWrapper); ok {
-			_, err := wrapper.w.Write(b)
-			return err
-		}
-		// If it's a real StringWriter (like strings.Builder), we can't easily write raw bytes
-		// that aren't valid UTF-8.
-		// Actually, in Go, strings can contain arbitrary bytes.
-		_, err := writer.WriteString(string(b))
-		return err
-	}
 	_, err := writer.WriteString(line + "\r\n")
 	return err
 }
