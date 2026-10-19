@@ -196,6 +196,7 @@ func (p *RegParser) finalizeAtEOF() error {
 		// Accept key declaration missing closing bracket at EOF (lenient).
 		if p.BufferAsString() != "" {
 			p.currentKey = p.result.FindOrCreateKey(p.BufferAsString())
+			p.currentKey.SetDeclared(true)
 			p.BufferClear()
 		}
 	}
@@ -479,6 +480,7 @@ func (p *RegParser) stateExpectKeyPath(r rune) (ParserState, error) {
 	} else if r == ']' {
 		if p.bracketsExpected == 0 {
 			p.currentKey = p.result.FindOrCreateKey(p.BufferAsString())
+			p.currentKey.SetDeclared(true)
 			return p.stateExpectCarriageReturn, nil
 		} else {
 			p.bracketsExpected--

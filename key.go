@@ -13,6 +13,7 @@ type KeyEntry struct {
 	values       map[string]*ValueEntry // map key is lowercase
 	defaultValue *ValueEntry
 	removeFlag   bool
+	declared     bool
 }
 
 // NewKeyEntry creates a new named key with a parent.
@@ -77,6 +78,19 @@ func (k *KeyEntry) RemoveFlag() bool {
 // SetRemoveFlag sets the remove flag.
 func (k *KeyEntry) SetRemoveFlag(flag bool) {
 	k.removeFlag = flag
+}
+
+// Declared reports whether a [...] header in the parsed .REG file named this key.
+// A key that is only a step on the path to a declared key - HKEY_LOCAL_MACHINE\SOFTWARE
+// above [HKEY_LOCAL_MACHINE\SOFTWARE\Vendor] - exists in the tree but is not declared.
+// Consumers that act on keys (permissions, creation, deletion) need the difference.
+func (k *KeyEntry) Declared() bool {
+	return k.declared
+}
+
+// SetDeclared sets the declared flag.
+func (k *KeyEntry) SetDeclared(flag bool) {
+	k.declared = flag
 }
 
 // GetPath returns the full registry path.
@@ -207,6 +221,7 @@ func (k *KeyEntry) FindOrCreateValue(name string) *ValueEntry {
 func (k *KeyEntry) Clone(newParent *KeyEntry) *KeyEntry {
 	result := NewKeyEntry(newParent, k.name)
 	result.removeFlag = k.removeFlag
+	result.declared = k.declared
 
 	// Clone subkeys
 	for key, child := range k.subKeys {
